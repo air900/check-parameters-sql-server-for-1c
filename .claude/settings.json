@@ -1,0 +1,101 @@
+{
+  "permissions": {
+    "allow": []
+  },
+  "hooks": {
+    "SubagentStop": [
+      {
+        "matcher": "worker",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"additionalContext\": \"Worker agent completed. Next: run test-runner to verify implementation.\"}'"
+          }
+        ]
+      },
+      {
+        "matcher": "test-runner",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"additionalContext\": \"Test-runner completed. Check results: if FAIL, invoke debugger. If PASS, proceed to review or next task.\"}'"
+          }
+        ]
+      },
+      {
+        "matcher": "reviewer",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"additionalContext\": \"Code review completed. If CHANGES REQUESTED, invoke debugger. If APPROVED, mark task complete.\"}'"
+          }
+        ]
+      },
+      {
+        "matcher": "debugger",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"additionalContext\": \"Debugger completed fix. Re-run test-runner or reviewer to verify the fix.\"}'"
+          }
+        ]
+      },
+      {
+        "matcher": "security-auditor",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"additionalContext\": \"Security audit completed. If Critical/High issues found, invoke debugger to fix. If only Medium/Low, proceed to next step.\"}'"
+          }
+        ]
+      },
+      {
+        "matcher": "planner",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"additionalContext\": \"Planning completed. Create tasks with TaskCreate and set dependencies with TaskUpdate(addBlockedBy).\"}'"
+          }
+        ]
+      },
+      {
+        "matcher": "documenter",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"additionalContext\": \"Documentation completed. Next: run doc-keeper to process documentation drafts (Phase 3.5).\"}'"
+          }
+        ]
+      },
+      {
+        "matcher": "doc-keeper",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"additionalContext\": \"Doc-keeper completed. Present recommendations to user for approval. After that, run observer (Phase 3.75).\"}'"
+          }
+        ]
+      },
+      {
+        "matcher": "observer",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"additionalContext\": \"Observer completed. Save report and output final summary to user.\"}'"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash(rm -rf*|git push --force*|git reset --hard*)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Destructive command detected. Verify this is intentional.' >&2; exit 2"
+          }
+        ]
+      }
+    ]
+  }
+}
