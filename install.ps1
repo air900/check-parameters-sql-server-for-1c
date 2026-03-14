@@ -1,4 +1,4 @@
-# install.ps1 v1.0.5 | irm https://raw.githubusercontent.com/air900/check-parameters-sql-server-for-1c/main/install.ps1 | iex
+# install.ps1 v1.0.6 | irm https://raw.githubusercontent.com/air900/check-parameters-sql-server-for-1c/main/install.ps1 | iex
 $ErrorActionPreference = "Stop"
 $repoOwner = "air900"
 $repoName  = "check-parameters-sql-server-for-1c"

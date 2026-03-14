@@ -147,12 +147,14 @@ function Send-DiagnosticData {
         [string]$ApiUrl = 'https://check-speed-sql-server-1c.audit-reshenie.ru:15443/api/v1/analyze'
     )
 
-    # Если проблем нет — молча завершаем, ничего предлагать не нужно
-    if ($Summary.Critical -eq 0 -and $Summary.Warning -eq 0) {
+    # Если это режим диагностики (есть severity) и проблем нет — молча завершаем
+    $hasSeverity = ($Summary.Critical + $Summary.Warning + $Summary.Ok) -gt 0
+    if ($hasSeverity -and $Summary.Critical -eq 0 -and $Summary.Warning -eq 0) {
         Write-Host ''
         Write-Host 'Проблем не обнаружено. Углублённый анализ не требуется.' -ForegroundColor Green
         return
     }
+    # В режиме сбора данных (нет severity) — всегда предлагаем анализ
 
     # Показываем рекламный блок с описанием углублённого анализа
     Show-AnalysisOffer -Summary $Summary

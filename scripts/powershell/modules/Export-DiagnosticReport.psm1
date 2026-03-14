@@ -154,6 +154,7 @@ function Get-FindingHtml {
 
         [Parameter(Mandatory = $false)]
         [AllowEmptyString()]
+        [AllowNull()]
         [string]$Status = '',
 
         [Parameter(Mandatory = $true)]
@@ -634,11 +635,10 @@ function Export-DiagnosticReport {
                 continue
             }
 
-            # Режим сбора данных (Status пустой) — показываем как "Параметр: Значение"
-            $displayStatus = $status
-            if ([string]::IsNullOrWhiteSpace($displayStatus)) {
-                $displayStatus = $currentValue
-            }
+            # Режим сбора данных (Status пустой) — показываем значение вместо статуса
+            $displayStatus = if (-not [string]::IsNullOrWhiteSpace($status)) { $status }
+                             elseif (-not [string]::IsNullOrWhiteSpace($currentValue)) { $currentValue }
+                             else { '' }
 
             $statusClass = if ([string]::IsNullOrWhiteSpace($status)) { 'info' } else { Get-HtmlStatusClass -Status $status }
 
