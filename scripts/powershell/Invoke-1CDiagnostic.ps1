@@ -100,7 +100,7 @@ foreach ($mod in $requiredModules) {
 
 Write-Host ""
 Write-Host "  ================================================================" -ForegroundColor Cyan
-Write-Host "      ДИАГНОСТИКА PostgreSQL ДЛЯ 1С:ПРЕДПРИЯТИЕ  v1.1.5" -ForegroundColor Cyan
+Write-Host "      ДИАГНОСТИКА PostgreSQL ДЛЯ 1С:ПРЕДПРИЯТИЕ  v1.1.6" -ForegroundColor Cyan
 Write-Host "                      audit-reshenie.ru" -ForegroundColor Cyan
 Write-Host "  ================================================================" -ForegroundColor Cyan
 Write-Host ""
@@ -160,21 +160,35 @@ if ($pg.Path) {
 Write-Host ""
 Write-Host "  [2/6] Подключение к PostgreSQL..." -ForegroundColor White
 
-# Пароль передаётся в PGPASSWORD (plaintext), поэтому SecureString не даёт
-# реальной защиты. Используем Read-Host -MaskInput (PS 7+) с fallback на
-# Read-Host -AsSecureString (PS 5.1) — оба варианта надёжно работают через irm|iex
-if ($PSVersionTable.PSVersion.Major -ge 7) {
-    $password = Read-Host "  Пароль для пользователя '$Username'" -MaskInput
-}
-else {
-    $securePass = Read-Host "  Пароль для пользователя '$Username'" -AsSecureString
-    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePass)
-    $password = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
-    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
-}
+# Ввод пароля через Read-Host (пароль скрыт звёздочками)
+$password = Read-Host "  Пароль для пользователя '$Username'"
 
-# Временно устанавливаем PGPASSWORD для поиска баз
+# Устанавливаем PGPASSWORD для psql
 $env:PGPASSWORD = $password
+
+# Проверка подключения перед продолжением
+$testPsql = if ($psqlPath) { $psqlPath } else {
+    $cmd = Get-Command psql.exe -ErrorAction SilentlyContinue
+    if ($cmd) { $cmd.Source } else { $null }
+}
+if ($testPsql) {
+    Write-Host "  Проверка подключения..." -ForegroundColor Gray
+    $testResult = & $testPsql '--host' $PgHost '--port' $Port '--username' $Username '--tuples-only' '--no-align' '--command' 'SELECT 1;' 'postgres' 2>&1
+    $testExit = $LASTEXITCODE
+    if ($testExit -ne 0) {
+        Write-Host ""
+        Write-Host "  [!] Ошибка подключения к PostgreSQL:" -ForegroundColor Red
+        $testResult | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
+        Write-Host ""
+        Write-Host "  Проверьте:" -ForegroundColor Yellow
+        Write-Host "    - Правильность пароля" -ForegroundColor Yellow
+        Write-Host "    - Доступность сервера ${PgHost}:${Port}" -ForegroundColor Yellow
+        Write-Host "    - Права пользователя '$Username'" -ForegroundColor Yellow
+        Write-Host ""
+        return
+    }
+    Write-Host "  Подключение успешно." -ForegroundColor Green
+}
 
 # ============================================================================
 # Шаг 3: Выбор базы данных
