@@ -100,7 +100,7 @@ foreach ($mod in $requiredModules) {
 
 Write-Host ""
 Write-Host "  ================================================================" -ForegroundColor Cyan
-Write-Host "      ДИАГНОСТИКА PostgreSQL ДЛЯ 1С:ПРЕДПРИЯТИЕ  v1.1.3" -ForegroundColor Cyan
+Write-Host "      ДИАГНОСТИКА PostgreSQL ДЛЯ 1С:ПРЕДПРИЯТИЕ  v1.1.4" -ForegroundColor Cyan
 Write-Host "                      audit-reshenie.ru" -ForegroundColor Cyan
 Write-Host "  ================================================================" -ForegroundColor Cyan
 Write-Host ""
@@ -160,31 +160,18 @@ if ($pg.Path) {
 Write-Host ""
 Write-Host "  [2/6] Подключение к PostgreSQL..." -ForegroundColor White
 
-# Очищаем буфер консоли от остаточных символов (после irm | iex / install.ps1)
-while ([Console]::KeyAvailable) {
-    [Console]::ReadKey($true) | Out-Null
+# Пароль передаётся в PGPASSWORD (plaintext), поэтому SecureString не даёт
+# реальной защиты. Используем Read-Host -MaskInput (PS 7+) с fallback на
+# Read-Host -AsSecureString (PS 5.1) — оба варианта надёжно работают через irm|iex
+if ($PSVersionTable.PSVersion.Major -ge 7) {
+    $password = Read-Host "  Пароль для пользователя '$Username'" -MaskInput
 }
-
-# Читаем пароль напрямую из консоли (не через stdin pipe)
-Write-Host "  Пароль для пользователя '$Username': " -NoNewline -ForegroundColor White
-$securePassword = [System.Security.SecureString]::new()
-while ($true) {
-    $key = [Console]::ReadKey($true)
-    if ($key.Key -eq 'Enter') { break }
-    if ($key.Key -eq 'Backspace') {
-        if ($securePassword.Length -gt 0) {
-            $securePassword.RemoveAt($securePassword.Length - 1)
-            Write-Host "`b `b" -NoNewline
-        }
-        continue
-    }
-    $securePassword.AppendChar($key.KeyChar)
-    Write-Host "*" -NoNewline
+else {
+    $securePass = Read-Host "  Пароль для пользователя '$Username'" -AsSecureString
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePass)
+    $password = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
 }
-Write-Host ""
-$password = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
-)
 
 # Временно устанавливаем PGPASSWORD для поиска баз
 $env:PGPASSWORD = $password
