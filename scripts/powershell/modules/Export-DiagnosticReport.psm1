@@ -23,8 +23,9 @@ function Get-HtmlStatusClass {
     [CmdletBinding()]
     [OutputType([string])]
     param(
-        [Parameter(Mandatory = $true)]
-        [string]$Status
+        [Parameter(Mandatory = $false)]
+        [AllowEmptyString()][AllowNull()]
+        [string]$Status = ''
     )
 
     if ($Status -match '🔴' -or $Status -match 'CRITICAL|КРИТИЧНО') {
@@ -47,8 +48,9 @@ function Get-HtmlStatusCategory {
     [CmdletBinding()]
     [OutputType([string])]
     param(
-        [Parameter(Mandatory = $true)]
-        [string]$Status
+        [Parameter(Mandatory = $false)]
+        [AllowEmptyString()][AllowNull()]
+        [string]$Status = ''
     )
 
     if ([string]::IsNullOrWhiteSpace($Status)) {
