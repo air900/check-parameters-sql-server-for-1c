@@ -61,29 +61,29 @@ function Find-PsqlExecutable {
 function Find-1CDatabases {
     <#
     .SYNOPSIS
-        Возвращает список ВСЕХ баз данных 1С:Предприятие на сервере PostgreSQL.
+        Возвращает список пользовательских баз данных на сервере PostgreSQL.
     .DESCRIPTION
-        Запрашивает список баз данных, проверяет наличие таблицы _reference1 в каждой.
-        Возвращает массив имён баз, где обнаружена 1С.
-        Если баз 1С не найдено — возвращает пустой массив.
+        Один запрос к pg_database — возвращает имена и размеры всех
+        пользовательских баз (кроме postgres и шаблонов).
+        Не подключается к каждой базе отдельно — работает мгновенно.
     .PARAMETER PsqlPath
         Путь к psql.exe.
-    .PARAMETER Host
+    .PARAMETER PgHost
         Имя или IP-адрес сервера PostgreSQL.
     .PARAMETER Port
         Порт PostgreSQL.
     .PARAMETER Username
         Имя пользователя для подключения.
     .OUTPUTS
-        [string[]] Массив имён баз данных 1С.
+        [PSCustomObject[]] Массив объектов с полями Name и Size.
     #>
-    [OutputType([string[]])]
+    [OutputType([PSCustomObject[]])]
     param(
         [Parameter(Mandatory = $true)]
         [string]$PsqlPath,
 
         [Parameter(Mandatory = $true)]
-        [string]$Host,
+        [string]$PgHost,
 
         [Parameter(Mandatory = $true)]
         [int]$Port,
@@ -92,10 +92,10 @@ function Find-1CDatabases {
         [string]$Username
     )
 
-    # Получаем список всех пользовательских баз данных
-    $listDbQuery = "SELECT datname FROM pg_database WHERE datistemplate = false AND datname NOT IN ('postgres') ORDER BY pg_database_size(datname) DESC;"
+    # Один запрос — список баз с размерами, без подключения к каждой
+    $listDbQuery = "SELECT datname || '|' || pg_size_pretty(pg_database_size(datname)) FROM pg_database WHERE datistemplate = false AND datname NOT IN ('postgres') ORDER BY pg_database_size(datname) DESC;"
     $psqlArgs = @(
-        '--host', $Host,
+        '--host', $PgHost,
         '--port', $Port,
         '--username', $Username,
         '--tuples-only',
@@ -118,44 +118,20 @@ function Find-1CDatabases {
         return @()
     }
 
-    $databases = $dbListOutput |
+    $results = @()
+    $dbListOutput |
         Where-Object { $_ -is [string] -and $_.Trim() -ne '' } |
-        ForEach-Object { $_.Trim() }
-
-    if ($databases.Count -eq 0) {
-        return @()
-    }
-
-    # Проверяем каждую базу на наличие таблицы _reference1 (признак 1С)
-    $checkTableQuery = "SELECT 1 FROM information_schema.tables WHERE table_name = '_reference1' LIMIT 1;"
-    $found = [System.Collections.Generic.List[string]]::new()
-
-    foreach ($dbName in $databases) {
-        $psqlCheckArgs = @(
-            '--host', $Host,
-            '--port', $Port,
-            '--username', $Username,
-            '--tuples-only',
-            '--no-align',
-            '--command', $checkTableQuery,
-            $dbName
-        )
-
-        try {
-            $checkOutput = & $PsqlPath @psqlCheckArgs 2>&1
-            $checkExitCode = $LASTEXITCODE
-        }
-        catch {
-            continue
+        ForEach-Object {
+            $parts = $_.Trim() -split '\|', 2
+            if ($parts.Count -ge 2) {
+                $results += [PSCustomObject]@{
+                    Name = $parts[0].Trim()
+                    Size = $parts[1].Trim()
+                }
+            }
         }
 
-        if ($checkExitCode -eq 0 -and ($checkOutput -join '').Trim() -eq '1') {
-            Write-Verbose "Обнаружена база данных 1С: $dbName"
-            $found.Add($dbName)
-        }
-    }
-
-    return $found.ToArray()
+    return $results
 }
 
 function Get-1CDatabase {

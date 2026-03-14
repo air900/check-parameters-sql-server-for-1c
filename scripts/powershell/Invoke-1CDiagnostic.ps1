@@ -99,7 +99,7 @@ foreach ($mod in $requiredModules) {
 
 Write-Host ""
 Write-Host "  ================================================================" -ForegroundColor Cyan
-Write-Host "      ДИАГНОСТИКА PostgreSQL ДЛЯ 1С:ПРЕДПРИЯТИЕ  v1.0.3" -ForegroundColor Cyan
+Write-Host "      ДИАГНОСТИКА PostgreSQL ДЛЯ 1С:ПРЕДПРИЯТИЕ  v1.0.4" -ForegroundColor Cyan
 Write-Host "                      audit-reshenie.ru" -ForegroundColor Cyan
 Write-Host "  ================================================================" -ForegroundColor Cyan
 Write-Host ""
@@ -184,30 +184,31 @@ if (-not $Database) {
     }
 
     if ($psqlForSearch) {
-        $databases1C = Find-1CDatabases -PsqlPath $psqlForSearch -Host $PgHost -Port $Port -Username $Username
+        $databases = Find-1CDatabases -PsqlPath $psqlForSearch -PgHost $PgHost -Port $Port -Username $Username
 
-        if ($databases1C.Count -eq 0) {
-            Write-Host "  Базы данных 1С не обнаружены. Будет использована первая доступная база." -ForegroundColor Yellow
+        if ($databases.Count -eq 0) {
+            Write-Host "  Базы данных не обнаружены." -ForegroundColor Yellow
         }
-        elseif ($databases1C.Count -eq 1) {
-            $Database = $databases1C[0]
-            Write-Host "  Обнаружена база данных 1С: $Database" -ForegroundColor Green
+        elseif ($databases.Count -eq 1) {
+            $Database = $databases[0].Name
+            Write-Host "  База данных: $Database ($($databases[0].Size))" -ForegroundColor Green
         }
         else {
-            Write-Host "  Обнаружено баз данных 1С: $($databases1C.Count)" -ForegroundColor Green
+            Write-Host "  Обнаружено баз данных: $($databases.Count)" -ForegroundColor Green
             Write-Host ""
-            for ($i = 0; $i -lt $databases1C.Count; $i++) {
-                Write-Host "    [$($i + 1)] $($databases1C[$i])" -ForegroundColor White
+            for ($i = 0; $i -lt $databases.Count; $i++) {
+                $db = $databases[$i]
+                Write-Host "    [$($i + 1)] $($db.Name) ($($db.Size))" -ForegroundColor White
             }
             Write-Host ""
 
-            $choice = Read-Host "  Выберите базу для проверки (1-$($databases1C.Count))"
+            $choice = Read-Host "  Выберите базу для проверки (1-$($databases.Count))"
             $choiceIdx = 0
-            if ([int]::TryParse($choice, [ref]$choiceIdx) -and $choiceIdx -ge 1 -and $choiceIdx -le $databases1C.Count) {
-                $Database = $databases1C[$choiceIdx - 1]
+            if ([int]::TryParse($choice, [ref]$choiceIdx) -and $choiceIdx -ge 1 -and $choiceIdx -le $databases.Count) {
+                $Database = $databases[$choiceIdx - 1].Name
             }
             else {
-                $Database = $databases1C[0]
+                $Database = $databases[0].Name
                 Write-Host "  Некорректный выбор. Используем: $Database" -ForegroundColor Yellow
             }
             Write-Host "  Выбрана база: $Database" -ForegroundColor Green
