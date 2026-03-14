@@ -91,7 +91,7 @@ foreach ($mod in $requiredModules) {
         Write-Error "Модуль не найден: $modPath"
         exit 1
     }
-    Import-Module $modPath -Force -ErrorAction Stop
+    Import-Module $modPath -Force -DisableNameChecking -ErrorAction Stop
 }
 
 # ============================================================================
@@ -100,7 +100,7 @@ foreach ($mod in $requiredModules) {
 
 Write-Host ""
 Write-Host "  ================================================================" -ForegroundColor Cyan
-Write-Host "      ДИАГНОСТИКА PostgreSQL ДЛЯ 1С:ПРЕДПРИЯТИЕ  v1.1.1" -ForegroundColor Cyan
+Write-Host "      ДИАГНОСТИКА PostgreSQL ДЛЯ 1С:ПРЕДПРИЯТИЕ  v1.1.2" -ForegroundColor Cyan
 Write-Host "                      audit-reshenie.ru" -ForegroundColor Cyan
 Write-Host "  ================================================================" -ForegroundColor Cyan
 Write-Host ""
@@ -160,7 +160,24 @@ if ($pg.Path) {
 Write-Host ""
 Write-Host "  [2/6] Подключение к PostgreSQL..." -ForegroundColor White
 
-$securePassword = Read-Host "  Пароль для пользователя '$Username'" -AsSecureString
+# Читаем пароль напрямую из консоли (не через stdin pipe)
+# Это важно при запуске через irm | iex — stdin занят скриптом
+Write-Host "  Пароль для пользователя '$Username': " -NoNewline -ForegroundColor White
+$securePassword = [System.Security.SecureString]::new()
+while ($true) {
+    $key = [Console]::ReadKey($true)
+    if ($key.Key -eq 'Enter') { break }
+    if ($key.Key -eq 'Backspace') {
+        if ($securePassword.Length -gt 0) {
+            $securePassword.RemoveAt($securePassword.Length - 1)
+            Write-Host "`b `b" -NoNewline
+        }
+        continue
+    }
+    $securePassword.AppendChar($key.KeyChar)
+    Write-Host "*" -NoNewline
+}
+Write-Host ""
 $password = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
     [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
 )
