@@ -14,7 +14,7 @@
     5. Сохраняет HTML-отчёт на Рабочий стол
     6. Предлагает отправить данные на углублённый анализ
 
-.PARAMETER Host
+.PARAMETER PgHost
     Имя или IP-адрес сервера PostgreSQL. По умолчанию: localhost
 
 .PARAMETER Port
@@ -36,7 +36,7 @@
     .\Invoke-1CDiagnostic.ps1
 
 .EXAMPLE
-    .\Invoke-1CDiagnostic.ps1 -Host 192.168.1.10 -Port 5433 -Database my1c_db
+    .\Invoke-1CDiagnostic.ps1 -PgHost 192.168.1.10 -Port 5433 -Database my1c_db
 
 .EXAMPLE
     .\Invoke-1CDiagnostic.ps1 -NoHtml -NoPrompt
@@ -50,7 +50,7 @@
 [CmdletBinding()]
 param(
     [Parameter()]
-    [string]$Host = "localhost",
+    [string]$PgHost = "localhost",
 
     [Parameter()]
     [int]$Port = 0,
@@ -116,7 +116,7 @@ if ($null -eq $pgInstances -or $pgInstances.Count -eq 0) {
     Write-Host ""
     Write-Host "  PostgreSQL не обнаружен на этом сервере." -ForegroundColor Red
     Write-Host "  Укажите параметры подключения:" -ForegroundColor Yellow
-    Write-Host "    .\Invoke-1CDiagnostic.ps1 -Host <host> -Port <port>" -ForegroundColor Yellow
+    Write-Host "    .\Invoke-1CDiagnostic.ps1 -PgHost <host> -Port <port>" -ForegroundColor Yellow
     Write-Host ""
     exit 1
 }
@@ -184,7 +184,7 @@ if (-not $Database) {
     }
 
     if ($psqlForSearch) {
-        $databases1C = Find-1CDatabases -PsqlPath $psqlForSearch -Host $Host -Port $Port -Username $Username
+        $databases1C = Find-1CDatabases -PsqlPath $psqlForSearch -Host $PgHost -Port $Port -Username $Username
 
         if ($databases1C.Count -eq 0) {
             Write-Host "  Базы данных 1С не обнаружены. Будет использована первая доступная база." -ForegroundColor Yellow
@@ -233,7 +233,7 @@ Write-Host ""
 Write-Host "  [4/6] Запуск диагностики..." -ForegroundColor White
 
 $invokeParams = @{
-    Host     = $Host
+    Host     = $PgHost
     Port     = $Port
     Username = $Username
     Password = $password
@@ -265,7 +265,7 @@ try {
         Write-Host ""
         Write-Host "  Проверьте:" -ForegroundColor Yellow
         Write-Host "    - Правильность пароля" -ForegroundColor Yellow
-        Write-Host "    - Доступность сервера $Host`:$Port" -ForegroundColor Yellow
+        Write-Host "    - Доступность сервера $PgHost`:$Port" -ForegroundColor Yellow
         Write-Host "    - Права пользователя '$Username'" -ForegroundColor Yellow
         Write-Host ""
         exit 1

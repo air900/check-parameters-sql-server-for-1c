@@ -47,7 +47,7 @@ irm https://raw.githubusercontent.com/air900/check-parameters-sql-server-for-1c/
 
 ```powershell
 # Подключение к удалённому серверу
-.\Invoke-1CDiagnostic.ps1 -Host 192.168.1.10 -Port 5433 -Database my1c_db
+.\Invoke-1CDiagnostic.ps1 -PgHost 192.168.1.10 -Port 5433 -Database my1c_db
 
 # Без HTML-отчёта
 .\Invoke-1CDiagnostic.ps1 -NoHtml
