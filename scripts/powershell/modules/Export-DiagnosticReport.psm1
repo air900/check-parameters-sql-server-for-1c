@@ -601,65 +601,142 @@ function Export-DiagnosticReport {
         [void]$sections[$section].Add($row)
     }
 
-    # --- 4. Сборка HTML ---
+    # --- 4. Определяем режим отчёта ---
+    $totalSeverity = $counts.Critical + $counts.Warning + $counts.Ok + $counts.NotChecked
+    $isDataMode = ($totalSeverity -eq 0)  # Режим сбора данных (нет severity)
 
-    # Дата и время формирования отчёта
     $reportDate = (Get-Date).ToString('dd.MM.yyyy HH:mm')
-
-    # Блок информации о сервере
     $serverInfoHtml = Get-ServerInfoHtml -ServerInfo $ServerInfo
 
-    # Карточки сводки
-    $summaryCardsHtml = @(
-        Get-SummaryCardHtml -CssClass 'critical'  -Label 'CRITICAL'     -Emoji '🔴' -Count $counts.Critical
-        Get-SummaryCardHtml -CssClass 'warning'   -Label 'WARNING'      -Emoji '🟡' -Count $counts.Warning
-        Get-SummaryCardHtml -CssClass 'ok'        -Label 'OK'           -Emoji '🟢' -Count $counts.Ok
-        Get-SummaryCardHtml -CssClass 'info'      -Label 'NOT CHECKED'  -Emoji '⚪' -Count $counts.NotChecked
-    ) -join "`n"
-
-    # Блоки разделов с результатами
+    # --- 5. Сборка секций ---
     $allSectionsHtml = [System.Text.StringBuilder]::new()
 
     foreach ($sectionName in $sections.Keys) {
         $sectionNameHtml = ConvertTo-HtmlEscaped -Text $sectionName
-        [void]$allSectionsHtml.AppendLine("        <div class=""section-group"">")
-        [void]$allSectionsHtml.AppendLine("            <div class=""section-title"">$sectionNameHtml</div>")
 
-        foreach ($row in $sections[$sectionName]) {
-            $status       = Get-RowProperty -Row $row -EnglishName 'Status'       -RussianName 'Состояние'
-            $problem      = Get-RowProperty -Row $row -EnglishName 'Problem'      -RussianName 'Проблема'
-            $currentValue = Get-RowProperty -Row $row -EnglishName 'CurrentValue' -RussianName 'Текущее значение'
-            $detected     = Get-RowProperty -Row $row -EnglishName 'Detected'     -RussianName 'Обнаружено'
-            $impact       = Get-RowProperty -Row $row -EnglishName 'Impact'       -RussianName 'Влияние на работу 1С'
+        if ($isDataMode) {
+            # Режим сбора данных — компактная таблица
+            [void]$allSectionsHtml.AppendLine("        <div class=""section-group"">")
+            [void]$allSectionsHtml.AppendLine("            <h2 class=""section-title"">$sectionNameHtml</h2>")
+            [void]$allSectionsHtml.AppendLine("            <table class=""params-table"">")
 
-            # Пропускаем пустые строки
-            if ([string]::IsNullOrWhiteSpace($problem) -and [string]::IsNullOrWhiteSpace($currentValue)) {
-                continue
+            foreach ($row in $sections[$sectionName]) {
+                $problem      = Get-RowProperty -Row $row -EnglishName 'Problem'      -RussianName 'Проблема'
+                $currentValue = Get-RowProperty -Row $row -EnglishName 'CurrentValue' -RussianName 'Текущее значение'
+
+                if ([string]::IsNullOrWhiteSpace($problem) -and [string]::IsNullOrWhiteSpace($currentValue)) {
+                    continue
+                }
+
+                $problemHtml = ConvertTo-HtmlEscaped -Text $problem
+                $valueHtml   = ConvertTo-HtmlEscaped -Text $currentValue
+
+                [void]$allSectionsHtml.AppendLine("                <tr><td class=""param-name"">$problemHtml</td><td class=""param-value"">$valueHtml</td></tr>")
             }
 
-            # Режим сбора данных (Status пустой) — показываем значение вместо статуса
-            $displayStatus = if (-not [string]::IsNullOrWhiteSpace($status)) { $status }
-                             elseif (-not [string]::IsNullOrWhiteSpace($currentValue)) { $currentValue }
-                             else { '' }
-
-            $statusClass = if ([string]::IsNullOrWhiteSpace($status)) { 'info' } else { Get-HtmlStatusClass -Status $status }
-
-            $findingHtml = Get-FindingHtml `
-                -StatusClass  $statusClass  `
-                -Status       $displayStatus `
-                -Problem      $problem      `
-                -CurrentValue $currentValue `
-                -Detected     $detected     `
-                -Impact       $impact
-
-            [void]$allSectionsHtml.AppendLine($findingHtml)
+            [void]$allSectionsHtml.AppendLine("            </table>")
+            [void]$allSectionsHtml.AppendLine("        </div>")
         }
+        else {
+            # Режим диагностики — карточки с severity
+            [void]$allSectionsHtml.AppendLine("        <div class=""section-group"">")
+            [void]$allSectionsHtml.AppendLine("            <div class=""section-title"">$sectionNameHtml</div>")
 
-        [void]$allSectionsHtml.AppendLine("        </div>")
+            foreach ($row in $sections[$sectionName]) {
+                $status       = Get-RowProperty -Row $row -EnglishName 'Status'       -RussianName 'Состояние'
+                $problem      = Get-RowProperty -Row $row -EnglishName 'Problem'      -RussianName 'Проблема'
+                $currentValue = Get-RowProperty -Row $row -EnglishName 'CurrentValue' -RussianName 'Текущее значение'
+                $detected     = Get-RowProperty -Row $row -EnglishName 'Detected'     -RussianName 'Обнаружено'
+                $impact       = Get-RowProperty -Row $row -EnglishName 'Impact'       -RussianName 'Влияние на работу 1С'
+
+                if ([string]::IsNullOrWhiteSpace($problem) -and [string]::IsNullOrWhiteSpace($currentValue)) {
+                    continue
+                }
+
+                $statusClass = if ([string]::IsNullOrWhiteSpace($status)) { 'info' } else { Get-HtmlStatusClass -Status $status }
+
+                $findingHtml = Get-FindingHtml `
+                    -StatusClass  $statusClass  `
+                    -Status       $status       `
+                    -Problem      $problem      `
+                    -CurrentValue $currentValue `
+                    -Detected     $detected     `
+                    -Impact       $impact
+
+                [void]$allSectionsHtml.AppendLine($findingHtml)
+            }
+
+            [void]$allSectionsHtml.AppendLine("        </div>")
+        }
     }
 
-    # --- 5. Итоговый HTML-документ ---
+    # --- 6. Карточки сводки (только в режиме диагностики) ---
+    $summaryHtml = ''
+    if (-not $isDataMode) {
+        $summaryCardsHtml = @(
+            Get-SummaryCardHtml -CssClass 'critical'  -Label 'CRITICAL'     -Emoji '🔴' -Count $counts.Critical
+            Get-SummaryCardHtml -CssClass 'warning'   -Label 'WARNING'      -Emoji '🟡' -Count $counts.Warning
+            Get-SummaryCardHtml -CssClass 'ok'        -Label 'OK'           -Emoji '🟢' -Count $counts.Ok
+            Get-SummaryCardHtml -CssClass 'info'      -Label 'NOT CHECKED'  -Emoji '⚪' -Count $counts.NotChecked
+        ) -join "`n"
+        $summaryHtml = @"
+    <section class="summary-section">
+        <div class="summary-cards">
+$summaryCardsHtml
+        </div>
+    </section>
+"@
+    }
+    else {
+        $summaryHtml = @"
+    <section class="summary-section">
+        <div class="data-summary">Собрано параметров: <strong>$($Results.Count)</strong></div>
+    </section>
+"@
+    }
+
+    # --- 7. Итоговый HTML-документ ---
     $css = Get-ReportCss
+
+    # Добавляем CSS для табличного режима
+    $dataModeCss = @"
+
+        /* Режим сбора данных — таблицы параметров */
+        .params-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0 0 8px 0;
+        }
+        .params-table tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+        .params-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid #eee;
+            font-size: 0.9em;
+        }
+        .param-name {
+            color: #555;
+            width: 45%;
+        }
+        .param-value {
+            color: #2c3e50;
+            font-weight: 600;
+            font-family: 'Consolas', 'Courier New', monospace;
+        }
+        .section-group h2.section-title {
+            font-size: 1em;
+            color: #2980b9;
+            border-bottom: 2px solid #2980b9;
+            padding: 8px 0 4px 0;
+            margin: 20px 0 0 0;
+        }
+        .data-summary {
+            font-size: 1.1em;
+            color: #555;
+            padding: 12px 0;
+        }
+"@
 
     $html = @"
 <!DOCTYPE html>
@@ -670,6 +747,7 @@ function Export-DiagnosticReport {
     <title>Диагностика PostgreSQL для 1С:Предприятие</title>
     <style>
 $css
+$dataModeCss
     </style>
 </head>
 <body>
@@ -681,19 +759,14 @@ $css
 
 $serverInfoHtml
 
-    <section class="summary-section">
-        <div class="summary-cards">
-$summaryCardsHtml
-        </div>
-    </section>
+$summaryHtml
 
     <section class="results-section">
 $($allSectionsHtml.ToString().TrimEnd())
     </section>
 
     <footer class="report-footer">
-        <p>Отчёт сгенерирован сервисом диагностики <a href="https://audit-reshenie.ru" target="_blank">audit-reshenie.ru</a></p>
-        <p>По вопросам оптимизации обращайтесь: <a href="mailto:info@audit-reshenie.ru">info@audit-reshenie.ru</a></p>
+        <p>Для углублённого анализа и рекомендаций по настройке: <a href="https://audit-reshenie.ru" target="_blank">audit-reshenie.ru</a> | <a href="mailto:info@audit-reshenie.ru">info@audit-reshenie.ru</a></p>
     </footer>
 
 </body>
