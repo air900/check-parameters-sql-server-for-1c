@@ -100,7 +100,7 @@ foreach ($mod in $requiredModules) {
 
 Write-Host ""
 Write-Host "  ================================================================" -ForegroundColor Cyan
-Write-Host "      ДИАГНОСТИКА PostgreSQL ДЛЯ 1С:ПРЕДПРИЯТИЕ  v1.1.2" -ForegroundColor Cyan
+Write-Host "      ДИАГНОСТИКА PostgreSQL ДЛЯ 1С:ПРЕДПРИЯТИЕ  v1.1.3" -ForegroundColor Cyan
 Write-Host "                      audit-reshenie.ru" -ForegroundColor Cyan
 Write-Host "  ================================================================" -ForegroundColor Cyan
 Write-Host ""
@@ -160,8 +160,12 @@ if ($pg.Path) {
 Write-Host ""
 Write-Host "  [2/6] Подключение к PostgreSQL..." -ForegroundColor White
 
+# Очищаем буфер консоли от остаточных символов (после irm | iex / install.ps1)
+while ([Console]::KeyAvailable) {
+    [Console]::ReadKey($true) | Out-Null
+}
+
 # Читаем пароль напрямую из консоли (не через stdin pipe)
-# Это важно при запуске через irm | iex — stdin занят скриптом
 Write-Host "  Пароль для пользователя '$Username': " -NoNewline -ForegroundColor White
 $securePassword = [System.Security.SecureString]::new()
 while ($true) {
