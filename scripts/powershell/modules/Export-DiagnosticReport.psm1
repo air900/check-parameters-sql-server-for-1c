@@ -152,8 +152,9 @@ function Get-FindingHtml {
         [Parameter(Mandatory = $true)]
         [string]$StatusClass,
 
-        [Parameter(Mandatory = $true)]
-        [string]$Status,
+        [Parameter(Mandatory = $false)]
+        [AllowEmptyString()]
+        [string]$Status = '',
 
         [Parameter(Mandatory = $true)]
         [string]$Problem,
@@ -628,16 +629,22 @@ function Export-DiagnosticReport {
             $detected     = Get-RowProperty -Row $row -EnglishName 'Detected'     -RussianName 'Обнаружено'
             $impact       = Get-RowProperty -Row $row -EnglishName 'Impact'       -RussianName 'Влияние на работу 1С'
 
-            # Строки без статуса (подзаголовки) пропускаем — они не несут диагностической ценности в HTML
-            if ([string]::IsNullOrWhiteSpace($status) -and [string]::IsNullOrWhiteSpace($problem)) {
+            # Пропускаем пустые строки
+            if ([string]::IsNullOrWhiteSpace($problem) -and [string]::IsNullOrWhiteSpace($currentValue)) {
                 continue
             }
 
-            $statusClass = if ([string]::IsNullOrWhiteSpace($status)) { 'not-checked' } else { Get-HtmlStatusClass -Status $status }
+            # Режим сбора данных (Status пустой) — показываем как "Параметр: Значение"
+            $displayStatus = $status
+            if ([string]::IsNullOrWhiteSpace($displayStatus)) {
+                $displayStatus = $currentValue
+            }
+
+            $statusClass = if ([string]::IsNullOrWhiteSpace($status)) { 'info' } else { Get-HtmlStatusClass -Status $status }
 
             $findingHtml = Get-FindingHtml `
                 -StatusClass  $statusClass  `
-                -Status       $status       `
+                -Status       $displayStatus `
                 -Problem      $problem      `
                 -CurrentValue $currentValue `
                 -Detected     $detected     `

@@ -477,8 +477,17 @@ function Invoke-SqlDiagnostic {
             $Database
         )
 
+        # Устанавливаем кодировку UTF-8 для psql и PowerShell
+        # Без этого кириллица отображается как мусор на Windows
+        $env:PGCLIENTENCODING = 'UTF8'
+        $savedOutputEncoding = [Console]::OutputEncoding
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
         Write-Verbose "Выполнение диагностического SQL-скрипта..."
         $rawOutput = & $PsqlPath @psqlArgs 2>&1
+
+        # Восстанавливаем кодировку
+        [Console]::OutputEncoding = $savedOutputEncoding
         $exitCode = $LASTEXITCODE
 
         if ($exitCode -ne 0) {

@@ -232,10 +232,19 @@ function Show-DiagnosticResults {
     # Итоговая сводка
     Write-Host ''
     Write-Separator -Width 72 -Char '=' -Color White
-    Write-Host 'ИТОГО:' -ForegroundColor White
-    Write-Host "  Критических : $($counts.Critical)" -ForegroundColor $(if ($counts.Critical -gt 0) { 'Red' } else { 'Green' })
-    Write-Host "  Важных      : $($counts.Warning)"  -ForegroundColor $(if ($counts.Warning  -gt 0) { 'Yellow' } else { 'Green' })
-    Write-Host "  Норма       : $($counts.Ok)"        -ForegroundColor Green
+    $totalSeverity = $counts.Critical + $counts.Warning + $counts.Ok
+    if ($totalSeverity -gt 0) {
+        # Режим диагностики — показываем severity-счётчики
+        Write-Host 'ИТОГО:' -ForegroundColor White
+        Write-Host "  Критических : $($counts.Critical)" -ForegroundColor $(if ($counts.Critical -gt 0) { 'Red' } else { 'Green' })
+        Write-Host "  Важных      : $($counts.Warning)"  -ForegroundColor $(if ($counts.Warning  -gt 0) { 'Yellow' } else { 'Green' })
+        Write-Host "  Норма       : $($counts.Ok)"        -ForegroundColor Green
+    }
+    else {
+        # Режим сбора данных — показываем количество параметров
+        Write-Host "СОБРАНО ПАРАМЕТРОВ: $($Results.Count)" -ForegroundColor White
+        Write-Host "  Для углублённого анализа эти данные можно отправить на проверку." -ForegroundColor Gray
+    }
     Write-Separator -Width 72 -Char '=' -Color White
 
     return $counts
