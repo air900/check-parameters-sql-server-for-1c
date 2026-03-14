@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Модуль автоматического обнаружения экземпляров PostgreSQL на Windows-сервере.
