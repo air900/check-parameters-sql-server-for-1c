@@ -79,6 +79,7 @@ $modulesPath = Join-Path $PSScriptRoot "modules"
 $requiredModules = @(
     'Find-PostgreSQL',
     'Invoke-SqlDiagnostic',
+    'Collect-OS',
     'Show-DiagnosticResults',
     'Export-DiagnosticReport',
     'Send-DiagnosticData'
@@ -99,7 +100,7 @@ foreach ($mod in $requiredModules) {
 
 Write-Host ""
 Write-Host "  ================================================================" -ForegroundColor Cyan
-Write-Host "      ДИАГНОСТИКА PostgreSQL ДЛЯ 1С:ПРЕДПРИЯТИЕ  v1.0.7" -ForegroundColor Cyan
+Write-Host "      ДИАГНОСТИКА PostgreSQL ДЛЯ 1С:ПРЕДПРИЯТИЕ  v1.1.0" -ForegroundColor Cyan
 Write-Host "                      audit-reshenie.ru" -ForegroundColor Cyan
 Write-Host "  ================================================================" -ForegroundColor Cyan
 Write-Host ""
@@ -257,7 +258,19 @@ try {
             exit 1
         }
 
-        Write-Host "  Получено проверок: $($results.Count)" -ForegroundColor Green
+        Write-Host "  Получено проверок PostgreSQL: $($results.Count)" -ForegroundColor Green
+
+        # Сбор данных ОС и объединение с результатами SQL-диагностики
+        Write-Host "  Сбор данных операционной системы..." -ForegroundColor White
+        try {
+            $pgDataDir = if ($pg.DataDir) { $pg.DataDir } else { '' }
+            $osResults = Collect-OSData -DataDir $pgDataDir
+            $results   = $results + $osResults
+            Write-Host "  Данные ОС собраны: $($osResults.Count) параметров" -ForegroundColor Green
+        }
+        catch {
+            Write-Host "  Предупреждение: не удалось собрать данные ОС: $_" -ForegroundColor Yellow
+        }
     }
     catch {
         Write-Host ""
