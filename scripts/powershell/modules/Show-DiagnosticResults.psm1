@@ -180,10 +180,20 @@ function Show-DiagnosticResults {
             $currentSection = $section
         }
 
-        # Строки без статуса (информационные заголовки раздела) — только текст
+        # Строки без статуса — режим сбора данных (Параметр = Значение)
         if ([string]::IsNullOrWhiteSpace($status)) {
             if (-not [string]::IsNullOrWhiteSpace($problem)) {
-                Write-Host "  $problem" -ForegroundColor Gray
+                if (-not [string]::IsNullOrWhiteSpace($currentValue)) {
+                    # Формат: Параметр .................. Значение
+                    $label = "  $problem "
+                    $dots = '.' * [Math]::Max(2, (50 - $label.Length))
+                    Write-Host $label -ForegroundColor Gray -NoNewline
+                    Write-Host $dots -ForegroundColor DarkGray -NoNewline
+                    Write-Host " $currentValue" -ForegroundColor White
+                }
+                else {
+                    Write-Host "  $problem" -ForegroundColor Gray
+                }
                 if (-not [string]::IsNullOrWhiteSpace($detected)) {
                     Write-Host "    $detected" -ForegroundColor DarkGray
                 }

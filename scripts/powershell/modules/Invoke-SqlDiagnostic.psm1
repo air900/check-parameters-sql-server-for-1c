@@ -15,7 +15,7 @@
 # ============================================================================
 
 # Путь к SQL-скрипту относительно папки модуля
-$script:SqlScriptRelativePath = '..\..\sql\Check-PostgreSQL-1C-Diagnostic.sql'
+$script:SqlScriptRelativePath = '..\..\sql\Collect-PostgreSQL-1C-Data.sql'
 
 # Стандартные пути установки psql на Windows
 $script:PsqlCommonPaths = @(
@@ -268,9 +268,12 @@ function ConvertFrom-PsqlOutput {
     .SYNOPSIS
         Парсит вывод psql в формате --csv в массив объектов PSCustomObject.
     .DESCRIPTION
-        SQL-скрипт возвращает 7 колонок:
-        N, Раздел, Проблема, Состояние, Текущее значение, Обнаружено, Влияние на работу 1С
+        SQL-скрипт Collect-PostgreSQL-1C-Data.sql возвращает 4 колонки:
+        N, Раздел, Параметр, Значение
         Функция преобразует каждую строку в объект с английскими именами свойств.
+        Для совместимости с модулями Show-DiagnosticResults и Export-DiagnosticReport
+        результат содержит поля Section, Problem (= Параметр), CurrentValue (= Значение).
+        Поля Status, Detected, Impact оставлены пустыми (интерпретация выполняется на бэкенде).
     .PARAMETER Lines
         Массив строк вывода psql.
     .OUTPUTS
@@ -298,19 +301,19 @@ function ConvertFrom-PsqlOutput {
         # Парсим CSV-строку с учётом кавычек
         $fields = ConvertFrom-CsvLine -Line $line
 
-        if ($fields.Count -lt 7) {
+        if ($fields.Count -lt 4) {
             Write-Verbose "Пропущена строка с недостаточным количеством полей: $line"
             continue
         }
 
         $obj = [PSCustomObject]@{
             N            = $fields[0]
-            Section      = $fields[1]
-            Problem      = $fields[2]
-            Status       = $fields[3]
-            CurrentValue = $fields[4]
-            Detected     = $fields[5]
-            Impact       = $fields[6]
+            Section      = $fields[1]       # Раздел
+            Problem      = $fields[2]       # Параметр (название)
+            Status       = ''               # Нет оценки в скрипте сбора данных
+            CurrentValue = $fields[3]       # Значение
+            Detected     = ''               # Интерпретация — на бэкенде
+            Impact       = ''               # Влияние — на бэкенде
         }
 
         $results.Add($obj)
