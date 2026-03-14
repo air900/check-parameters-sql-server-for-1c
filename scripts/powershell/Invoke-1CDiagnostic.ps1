@@ -100,7 +100,7 @@ foreach ($mod in $requiredModules) {
 
 Write-Host ""
 Write-Host "  ================================================================" -ForegroundColor Cyan
-Write-Host "      ДИАГНОСТИКА PostgreSQL ДЛЯ 1С:ПРЕДПРИЯТИЕ  v1.1.6" -ForegroundColor Cyan
+Write-Host "      ДИАГНОСТИКА PostgreSQL ДЛЯ 1С:ПРЕДПРИЯТИЕ  v1.1.7" -ForegroundColor Cyan
 Write-Host "                      audit-reshenie.ru" -ForegroundColor Cyan
 Write-Host "  ================================================================" -ForegroundColor Cyan
 Write-Host ""
@@ -160,8 +160,21 @@ if ($pg.Path) {
 Write-Host ""
 Write-Host "  [2/6] Подключение к PostgreSQL..." -ForegroundColor White
 
-# Ввод пароля через Read-Host (пароль скрыт звёздочками)
-$password = Read-Host "  Пароль для пользователя '$Username'"
+# Проверка раскладки клавиатуры перед вводом пароля
+try {
+    Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+    $layout = [System.Windows.Forms.InputLanguage]::CurrentInputLanguage.Culture.Name
+    if ($layout -match 'ru') {
+        Write-Host "  [*] Раскладка клавиатуры: RU — переключите на EN для ввода пароля" -ForegroundColor Yellow
+    }
+}
+catch { }
+
+# Ввод пароля (скрыт звёздочками)
+$securePass = Read-Host "  Пароль для пользователя '$Username'" -AsSecureString
+$bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePass)
+$password = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
 
 # Устанавливаем PGPASSWORD для psql
 $env:PGPASSWORD = $password
