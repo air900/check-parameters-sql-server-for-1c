@@ -175,7 +175,6 @@ function Get-1CDatabase {
         '--host', $Host,
         '--port', $Port,
         '--username', $Username,
-        '--no-password',
         '--tuples-only',
         '--no-align',
         '--command', $listDbQuery,
@@ -213,7 +212,6 @@ function Get-1CDatabase {
             '--host', $Host,
             '--port', $Port,
             '--username', $Username,
-            '--no-password',
             '--tuples-only',
             '--no-align',
             '--command', $checkTableQuery,
@@ -471,7 +469,6 @@ function Invoke-SqlDiagnostic {
             '--host', $Host,
             '--port', $Port,
             '--username', $Username,
-            '--no-password',
             '--csv',
             '--file', $sqlScriptPath,
             $Database
