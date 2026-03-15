@@ -275,7 +275,7 @@ function ConvertFrom-PsqlOutput {
         # Парсим CSV-строку с учётом кавычек
         $fields = ConvertFrom-CsvLine -Line $line
 
-        if ($fields.Count -lt 4) {
+        if ($fields.Count -lt 5) {
             Write-Verbose "Пропущена строка с недостаточным количеством полей: $line"
             continue
         }
@@ -283,9 +283,10 @@ function ConvertFrom-PsqlOutput {
         $obj = [PSCustomObject]@{
             N            = $fields[0]
             Section      = $fields[1]       # Раздел
-            Problem      = $fields[2]       # Параметр (название)
+            Key          = $fields[2]       # Ключ (техническое имя параметра)
+            Problem      = $fields[3]       # Параметр (человекочитаемое название)
             Status       = ''               # Нет оценки в скрипте сбора данных
-            CurrentValue = $fields[3]       # Значение
+            CurrentValue = $fields[4]       # Значение
             Detected     = ''               # Интерпретация — на бэкенде
             Impact       = ''               # Влияние — на бэкенде
         }

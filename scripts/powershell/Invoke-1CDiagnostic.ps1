@@ -100,7 +100,7 @@ foreach ($mod in $requiredModules) {
 
 Write-Host ""
 Write-Host "  ================================================================" -ForegroundColor Cyan
-Write-Host "      ДИАГНОСТИКА PostgreSQL ДЛЯ 1С:ПРЕДПРИЯТИЕ  v1.1.9" -ForegroundColor Cyan
+Write-Host "      ДИАГНОСТИКА PostgreSQL ДЛЯ 1С:ПРЕДПРИЯТИЕ  v1.2.0" -ForegroundColor Cyan
 Write-Host "                      audit-reshenie.ru" -ForegroundColor Cyan
 Write-Host "  ================================================================" -ForegroundColor Cyan
 Write-Host ""
@@ -366,7 +366,7 @@ if (-not $NoHtml) {
     try {
         $jsonPath = $reportPath -replace '\.html$', '.json'
         $payload = @{
-            version    = 'v1.1.9'
+            version    = 'v1.2.0'
             dbms       = 'postgresql'
             timestamp  = (Get-Date -Format 'o')
             server     = $serverInfo
