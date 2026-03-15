@@ -25,7 +25,7 @@ function Write-BoxLine {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Line,
-        [System.ConsoleColor]$Color = 'Magenta'
+        [System.ConsoleColor]$Color = 'DarkGray'
     )
 
     Write-Host $Line -ForegroundColor $Color
@@ -74,28 +74,17 @@ function Show-AnalysisOffer {
     Write-Host ''
     Write-BoxLine "${topLeft}${hLine}${topRight}"
     Write-BoxLine (Format-BoxRow '' $innerWidth)
-    Write-BoxLine (Format-BoxRow '  УГЛУБЛЁННЫЙ АНАЛИЗ' $innerWidth)
+    Write-Host (Format-BoxRow '  АНАЛИЗ КОНФИГУРАЦИИ' $innerWidth) -ForegroundColor Green
     Write-BoxLine (Format-BoxRow '' $innerWidth)
     Write-BoxLine "${divLeft}${hLine}${divRight}"
     Write-BoxLine (Format-BoxRow '' $innerWidth)
-
-    # Выводим счётчики найденных проблем
-    if ($Summary.Critical -gt 0) {
-        Write-BoxLine (Format-BoxRow "  Критических проблем : $($Summary.Critical)" $innerWidth)
-    }
-    if ($Summary.Warning -gt 0) {
-        Write-BoxLine (Format-BoxRow "  Важных проблем      : $($Summary.Warning)" $innerWidth)
-    }
-
+    Write-Host (Format-BoxRow '  Что вы получите:' $innerWidth) -ForegroundColor White
     Write-BoxLine (Format-BoxRow '' $innerWidth)
-    Write-BoxLine "${divLeft}${hLine}${divRight}"
-    Write-BoxLine (Format-BoxRow '' $innerWidth)
-    Write-BoxLine (Format-BoxRow '  Что включает углублённый анализ:' $innerWidth)
-    Write-BoxLine (Format-BoxRow '' $innerWidth)
-    Write-BoxLine (Format-BoxRow '  * Анализ с учётом нагрузки и особенностей вашей системы' $innerWidth)
-    Write-BoxLine (Format-BoxRow '  * Конкретные значения параметров для вашего оборудования' $innerWidth)
-    Write-BoxLine (Format-BoxRow '  * Сравнение «до» и «после» настройки' $innerWidth)
-    Write-BoxLine (Format-BoxRow '  * Пошаговые инструкции по устранению каждой проблемы' $innerWidth)
+    Write-Host (Format-BoxRow '  * Оценку текущих настроек сервера' $innerWidth) -ForegroundColor White
+    Write-Host (Format-BoxRow '  * Выявление ошибок конфигурации,' $innerWidth) -ForegroundColor White
+    Write-Host (Format-BoxRow '    влияющих на производительность 1С' $innerWidth) -ForegroundColor White
+    Write-Host (Format-BoxRow '  * Приоритеты: что критично,' $innerWidth) -ForegroundColor White
+    Write-Host (Format-BoxRow '    что желательно, что в норме' $innerWidth) -ForegroundColor White
     Write-BoxLine (Format-BoxRow '' $innerWidth)
     Write-BoxLine "${bottomLeft}${hLine}${bottomRight}"
     Write-Host ''

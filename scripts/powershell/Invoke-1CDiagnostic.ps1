@@ -100,7 +100,7 @@ foreach ($mod in $requiredModules) {
 
 Write-Host ""
 Write-Host "  ================================================================" -ForegroundColor Cyan
-Write-Host "      ДИАГНОСТИКА PostgreSQL ДЛЯ 1С:ПРЕДПРИЯТИЕ  v1.1.7" -ForegroundColor Cyan
+Write-Host "      ДИАГНОСТИКА PostgreSQL ДЛЯ 1С:ПРЕДПРИЯТИЕ  v1.1.8" -ForegroundColor Cyan
 Write-Host "                      audit-reshenie.ru" -ForegroundColor Cyan
 Write-Host "  ================================================================" -ForegroundColor Cyan
 Write-Host ""
@@ -357,6 +357,11 @@ if (-not $NoHtml) {
     try {
         $reportPath = Export-DiagnosticReport -Results $results -ServerInfo $serverInfo
         Write-Host "  Отчёт сохранён: $reportPath" -ForegroundColor Green
+        $openReport = Read-Host "  Открыть отчёт в браузере? (Y/N)"
+        if ($openReport -match '^[YyДд]') {
+            try { Start-Process -FilePath $reportPath }
+            catch { Write-Host "  Не удалось открыть: $_" -ForegroundColor Yellow }
+        }
     }
     catch {
         Write-Host "  Не удалось сохранить HTML-отчёт: $_" -ForegroundColor Yellow

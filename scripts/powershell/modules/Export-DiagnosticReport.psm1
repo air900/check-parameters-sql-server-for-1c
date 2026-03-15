@@ -786,13 +786,7 @@ $($allSectionsHtml.ToString().TrimEnd())
 
     Write-Verbose "HTML-отчёт сохранён: $OutputPath"
 
-    # --- 7. Открываем отчёт в браузере ---
-    try {
-        Start-Process -FilePath $OutputPath
-    }
-    catch {
-        Write-Warning "Не удалось автоматически открыть отчёт в браузере: $_"
-    }
+    # --- 7. Отчёт не открываем автоматически — решает вызывающий код ---
 
     return $OutputPath
 }
