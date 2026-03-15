@@ -100,7 +100,7 @@ foreach ($mod in $requiredModules) {
 
 Write-Host ""
 Write-Host "  ================================================================" -ForegroundColor Cyan
-Write-Host "      ДИАГНОСТИКА PostgreSQL ДЛЯ 1С:ПРЕДПРИЯТИЕ  v1.1.8" -ForegroundColor Cyan
+Write-Host "      ДИАГНОСТИКА PostgreSQL ДЛЯ 1С:ПРЕДПРИЯТИЕ  v1.1.9" -ForegroundColor Cyan
 Write-Host "                      audit-reshenie.ru" -ForegroundColor Cyan
 Write-Host "  ================================================================" -ForegroundColor Cyan
 Write-Host ""
@@ -356,15 +356,42 @@ if (-not $NoHtml) {
 
     try {
         $reportPath = Export-DiagnosticReport -Results $results -ServerInfo $serverInfo
-        Write-Host "  Отчёт сохранён: $reportPath" -ForegroundColor Green
+        Write-Host "  HTML-отчёт: $reportPath" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "  Не удалось сохранить HTML-отчёт: $_" -ForegroundColor Yellow
+    }
+
+    # Сохраняем JSON с данными для передачи на бэкенд
+    try {
+        $jsonPath = $reportPath -replace '\.html$', '.json'
+        $payload = @{
+            version    = 'v1.1.9'
+            dbms       = 'postgresql'
+            timestamp  = (Get-Date -Format 'o')
+            server     = $serverInfo
+            parameters = @($results | ForEach-Object {
+                $obj = @{}
+                foreach ($prop in $_.PSObject.Properties) {
+                    $obj[$prop.Name] = $prop.Value
+                }
+                $obj
+            })
+        }
+        $payload | ConvertTo-Json -Depth 10 | Out-File -FilePath $jsonPath -Encoding UTF8
+        Write-Host "  JSON-данные: $jsonPath" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "  Не удалось сохранить JSON: $_" -ForegroundColor Yellow
+    }
+
+    # Спрашиваем, открыть ли HTML-отчёт
+    if ($reportPath -and (Test-Path $reportPath)) {
         $openReport = Read-Host "  Открыть отчёт в браузере? (Y/N)"
         if ($openReport -match '^[YyДд]') {
             try { Start-Process -FilePath $reportPath }
             catch { Write-Host "  Не удалось открыть: $_" -ForegroundColor Yellow }
         }
-    }
-    catch {
-        Write-Host "  Не удалось сохранить HTML-отчёт: $_" -ForegroundColor Yellow
     }
 }
 else {
