@@ -1,0 +1,316 @@
+﻿-- ============================================================================
+-- Collect-MSSQL-1C-PerDB.sql
+-- ----------------------------------------------------------------------------
+-- Назначение: per-DB блоки коллектора для итерации по нескольким 1С-базам.
+-- Запускается PowerShell-модулем Invoke-MssqlDiagnostic.psm1 один раз для
+-- каждой 1С-базы (через sqlcmd -d <DBNAME>). Все блоки используют DB_NAME()
+-- и DB_ID() — никаких параметров через -v не требуется.
+--
+-- Контекст (bd 70e): основной коллектор Collect-MSSQL-1C-Data.sql эмитит
+-- _apl_<dbname> и _stale_stats_* только для текущей подключённой базы (по
+-- умолчанию master, где блоки заглушены через AND DB_ID() > 4). Чтобы
+-- покрыть multi-DB инстансы, PowerShell-модуль:
+--   1. Запускает основной коллектор (master или указанная Database).
+--   2. Через Find-1CDatabasesOnMssql получает список 1С-баз.
+--   3. Для каждой 1С-базы запускает этот скрипт с -d <dbname>.
+--   4. Аппендит полученные строки к результатам основного коллектора.
+--
+-- Формат вывода идентичен основному коллектору (pipe-разделённый, 6 полей):
+--   N | Section | Key | Label | Display | Value
+-- ============================================================================
+
+SET NOCOUNT ON;
+
+-- ALLOW_PAGE_LOCKS distribution per DB (признак платформы 8.3.22+)
+SELECT 400 + ROW_NUMBER() OVER (ORDER BY DB_ID()) AS "N",
+       'statistics' AS "Section",
+       '_apl_' + (DB_NAME() COLLATE DATABASE_DEFAULT) AS "Key",
+       N'ALLOW_PAGE_LOCKS в БД: ' + (DB_NAME() COLLATE DATABASE_DEFAULT) AS "Label",
+       CONVERT(NVARCHAR(20),
+         SUM(CASE WHEN allow_page_locks = 0 THEN 1 ELSE 0 END))
+       + N' OFF из ' + CONVERT(NVARCHAR(20), COUNT(*))
+       + ' (' + CONVERT(NVARCHAR(20),
+           CAST(100.0 * SUM(CASE WHEN allow_page_locks = 0 THEN 1 ELSE 0 END) /
+                NULLIF(COUNT(*), 0) AS DECIMAL(5,1))) + ' %)' AS "Display",
+       CONVERT(NVARCHAR(MAX),
+         '{"db":"' + (DB_NAME() COLLATE DATABASE_DEFAULT) + '"'
+         + ',"no_page_locks":' + CONVERT(NVARCHAR(20),
+             SUM(CASE WHEN allow_page_locks = 0 THEN 1 ELSE 0 END))
+         + ',"total_indexes":' + CONVERT(NVARCHAR(20), COUNT(*))
+         + ',"pct":' + CONVERT(NVARCHAR(20),
+             CAST(100.0 * SUM(CASE WHEN allow_page_locks = 0 THEN 1 ELSE 0 END) /
+                  NULLIF(COUNT(*), 0) AS DECIMAL(5,1)))
+         + '}'
+       ) AS "Value"
+FROM sys.indexes
+WHERE type IN (1, 2)  -- clustered, nonclustered
+  AND DB_ID() > 4     -- защита: per-DB скрипт не должен запускаться против системных баз
+HAVING COUNT(*) > 0;
+GO
+
+-- СВОДКА ПО СТАТИСТИКАМ В БД (агрегат). Один summary-row на БД с числовыми
+-- метриками устаревания.
+--
+-- bd 5h3 (v2.8.17): older_7d / older_30d / max_age_days теперь считают только
+-- ЗНАЧИМЫЕ статистики — те, где rows >= 10000 И modification_counter > 0.
+-- Раньше счётчик включал _WA_Sys_* auto-stats на крошечных таблицах с
+-- modification_counter=0 (cardinality всё ещё точна, обновлять бессмысленно).
+-- Поле finding на eshn_test1 1197 GB: было `older_7d=15786` (паника), реально
+-- 99 % шум — мелочь без правок. После фильтра остаются только actionable
+-- объекты.
+--
+-- threshold для high_change: modification_counter > 20% от rows, для таблиц
+-- >1000 строк — оставлен как есть (industry-standard порог Ola Hallengren).
+-- Поля total и total_modifications — НЕ фильтруются (общая инвентаризация).
+SELECT 410 + ROW_NUMBER() OVER (ORDER BY DB_ID()) AS "N",
+       'statistics' AS "Section",
+       '_stats_summary_' + (DB_NAME() COLLATE DATABASE_DEFAULT) AS "Key",
+       N'Состояние статистики БД: ' + (DB_NAME() COLLATE DATABASE_DEFAULT) AS "Label",
+       CONVERT(NVARCHAR(20), COUNT(*)) + N' статистик / '
+         + CONVERT(NVARCHAR(20), SUM(CASE WHEN DATEDIFF(DAY, sp.last_updated, GETDATE()) > 7
+                                              AND sp.rows >= 10000
+                                              AND sp.modification_counter > 0
+                                         THEN 1 ELSE 0 END))
+           + N' значимых старше 7 дн / '
+         + CONVERT(NVARCHAR(20), SUM(CASE WHEN DATEDIFF(DAY, sp.last_updated, GETDATE()) > 30
+                                              AND sp.rows >= 10000
+                                              AND sp.modification_counter > 0
+                                         THEN 1 ELSE 0 END))
+           + N' значимых старше 30 дн / '
+         + CONVERT(NVARCHAR(20), SUM(CASE WHEN sp.modification_counter > 0.2 * sp.rows AND sp.rows > 1000 THEN 1 ELSE 0 END))
+           + N' с >20% изменений / макс возраст значимых '
+         + ISNULL(CONVERT(NVARCHAR(20), MAX(CASE WHEN sp.rows >= 10000 AND sp.modification_counter > 0
+                                                 THEN DATEDIFF(DAY, sp.last_updated, GETDATE())
+                                                 ELSE NULL END)), '0')
+           + N' дн' AS "Display",
+       CONVERT(NVARCHAR(MAX),
+         '{"db":"' + (DB_NAME() COLLATE DATABASE_DEFAULT) + '"'
+         + ',"total":'             + CONVERT(NVARCHAR(20), COUNT(*))
+         + ',"older_7d":'          + CONVERT(NVARCHAR(20), SUM(CASE WHEN DATEDIFF(DAY, sp.last_updated, GETDATE()) > 7
+                                                                         AND sp.rows >= 10000
+                                                                         AND sp.modification_counter > 0
+                                                                    THEN 1 ELSE 0 END))
+         + ',"older_30d":'         + CONVERT(NVARCHAR(20), SUM(CASE WHEN DATEDIFF(DAY, sp.last_updated, GETDATE()) > 30
+                                                                         AND sp.rows >= 10000
+                                                                         AND sp.modification_counter > 0
+                                                                    THEN 1 ELSE 0 END))
+         + ',"high_change":'       + CONVERT(NVARCHAR(20), SUM(CASE WHEN sp.modification_counter > 0.2 * sp.rows AND sp.rows > 1000 THEN 1 ELSE 0 END))
+         + ',"max_age_days":'      + ISNULL(CONVERT(NVARCHAR(20), MAX(CASE WHEN sp.rows >= 10000 AND sp.modification_counter > 0
+                                                                            THEN DATEDIFF(DAY, sp.last_updated, GETDATE())
+                                                                            ELSE NULL END)), '0')
+         + ',"total_modifications":' + CONVERT(NVARCHAR(20), ISNULL(SUM(CAST(sp.modification_counter AS BIGINT)), 0))
+         + '}'
+       ) AS "Value"
+FROM sys.stats s
+CROSS APPLY sys.dm_db_stats_properties(s.object_id, s.stats_id) sp
+JOIN sys.tables t WITH (NOLOCK) ON s.object_id = t.object_id   -- bd 5h3: column lookup быстрее OBJECTPROPERTY()
+WHERE t.is_ms_shipped = 0
+  AND DB_ID() > 4;
+GO
+
+-- УСТАРЕВШАЯ СТАТИСТИКА (топ-20 по modification_counter в текущей БД)
+SELECT 600 + ROW_NUMBER() OVER (ORDER BY sp.modification_counter DESC) AS "N",
+       'runtime' AS "Section",
+       '_stale_stats_' + (DB_NAME() COLLATE DATABASE_DEFAULT) + '_'
+         + CONVERT(NVARCHAR(10), s.object_id) + '_'
+         + CONVERT(NVARCHAR(10), s.stats_id) AS "Key",
+       N'Статистика: ' + (DB_NAME() COLLATE DATABASE_DEFAULT) + '.'
+         + (OBJECT_SCHEMA_NAME(s.object_id) COLLATE DATABASE_DEFAULT) + '.'
+         + (OBJECT_NAME(s.object_id) COLLATE DATABASE_DEFAULT) + ' / ' + (s.name COLLATE DATABASE_DEFAULT) AS "Label",
+       N'возраст=' + ISNULL(CONVERT(NVARCHAR(20),
+           DATEDIFF(DAY, sp.last_updated, GETDATE())), '?') + N' дн / '
+       + N'строк=' + CONVERT(NVARCHAR(20), sp.rows)
+       + N' / изменений=' + CONVERT(NVARCHAR(20), sp.modification_counter) AS "Display",
+       CONVERT(NVARCHAR(MAX),
+         '{"db":"' + (DB_NAME() COLLATE DATABASE_DEFAULT) + '"'
+         + ',"table":"' + (OBJECT_SCHEMA_NAME(s.object_id) COLLATE DATABASE_DEFAULT) + '.' + (OBJECT_NAME(s.object_id) COLLATE DATABASE_DEFAULT) + '"'
+         + ',"stats":"' + (s.name COLLATE DATABASE_DEFAULT) + '"'
+         + ',"last_updated":"' + ISNULL(CONVERT(NVARCHAR(30), sp.last_updated, 126), '') + '"'
+         + ',"rows":' + CONVERT(NVARCHAR(20), sp.rows)
+         + ',"modification_counter":' + CONVERT(NVARCHAR(20), sp.modification_counter)
+         + ',"days_old":' + ISNULL(CONVERT(NVARCHAR(20),
+             DATEDIFF(DAY, sp.last_updated, GETDATE())), 'null')
+         + '}'
+       ) AS "Value"
+FROM sys.stats s
+CROSS APPLY sys.dm_db_stats_properties(s.object_id, s.stats_id) sp
+WHERE DB_ID() > 4
+  -- Только USER tables (без sys.* шума).
+  AND OBJECTPROPERTY(s.object_id, 'IsUserTable') = 1
+  -- Значимый размер — мелкие справочники (rows < 1000) даже устаревшие
+  -- не дают шанса на серьёзное расхождение оценок оптимизатора.
+  AND sp.rows > 1000
+  -- Industry-standard signal «нужно обновить» — Ola Hallengren default:
+  -- modification_counter > 20% строк. Сам по себе age НЕ показатель качества
+  -- статистики (статичный справочник 365-дневной давности — корректная стат).
+  -- Erin Stellato (SQLskills): "Track modification %, not age".
+  AND sp.modification_counter > 0.2 * sp.rows
+ORDER BY (CAST(sp.modification_counter AS DECIMAL(20,1)) / NULLIF(sp.rows, 0)) DESC
+OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY;
+GO
+
+-- ============================================================================
+-- bd 37r: ФРАГМЕНТАЦИЯ ИНДЕКСОВ — per-DB summary + TOP-20 (только USER tables).
+-- DMV mode 'LIMITED' — читает root + intermediate-pages, безопасно для prod
+-- (S-lock на metadata, никакого скана данных). На 1 TB ERP занимает 5-30 сек.
+-- Фильтры: page_count > 1000 (≥ 8 MB — мелкие индексы Microsoft рекомендует
+-- игнорировать), index_id > 0 (heap не имеет фрагментации), IsUserTable.
+-- ============================================================================
+
+-- Per-DB summary (один row на БД)
+SELECT 420 + ROW_NUMBER() OVER (ORDER BY DB_ID()) AS "N",
+       'maintenance' AS "Section",
+       '_index_fragmentation_summary_' + (DB_NAME() COLLATE DATABASE_DEFAULT) AS "Key",
+       N'Состояние фрагментации индексов БД: ' + (DB_NAME() COLLATE DATABASE_DEFAULT) AS "Label",
+       -- ISNULL на каждый агрегат: SUM/MAX над пустым набором возвращают NULL,
+       -- любая string concat с NULL → NULL → Display/Value становятся 'NULL'.
+       -- COUNT(*) всегда возвращает 0 на пустом наборе, его не нужно защищать.
+       CONVERT(NVARCHAR(20), COUNT(*)) + N' индексов / '
+         + CONVERT(NVARCHAR(20), ISNULL(SUM(CASE WHEN ips.avg_fragmentation_in_percent > 30 THEN 1 ELSE 0 END), 0))
+           + N' с frag>30% / '
+         + CONVERT(NVARCHAR(20), ISNULL(SUM(CASE WHEN ips.avg_fragmentation_in_percent BETWEEN 5 AND 30 THEN 1 ELSE 0 END), 0))
+           + N' с frag 5-30% / макс '
+         + CONVERT(NVARCHAR(20), CAST(ISNULL(MAX(ips.avg_fragmentation_in_percent), 0) AS DECIMAL(5,1)))
+           + N' %' AS "Display",
+       CONVERT(NVARCHAR(MAX),
+         '{"db":"' + (DB_NAME() COLLATE DATABASE_DEFAULT) + '"'
+         + ',"total":'              + CONVERT(NVARCHAR(20), COUNT(*))
+         + ',"high_frag_count":'    + CONVERT(NVARCHAR(20), ISNULL(SUM(CASE WHEN ips.avg_fragmentation_in_percent > 30 THEN 1 ELSE 0 END), 0))
+         + ',"medium_frag_count":'  + CONVERT(NVARCHAR(20), ISNULL(SUM(CASE WHEN ips.avg_fragmentation_in_percent BETWEEN 5 AND 30 THEN 1 ELSE 0 END), 0))
+         + ',"max_frag_pct":'       + CONVERT(NVARCHAR(20), CAST(ISNULL(MAX(ips.avg_fragmentation_in_percent), 0) AS DECIMAL(5,1)))
+         + ',"high_frag_size_mb":'  + CONVERT(NVARCHAR(20), ISNULL(SUM(CASE WHEN ips.avg_fragmentation_in_percent > 30 THEN ips.page_count * 8 / 1024 ELSE 0 END), 0))
+         + '}'
+       ) AS "Value"
+FROM sys.dm_db_index_physical_stats(DB_ID(), NULL, NULL, NULL, 'LIMITED') ips
+JOIN sys.indexes i ON i.object_id = ips.object_id AND i.index_id = ips.index_id
+WHERE ips.page_count > 1000               -- ≥ 8 MB (мелкие индексы — шум)
+  AND ips.index_id > 0                    -- heap (index_id=0) — нет фрагментации
+  AND OBJECTPROPERTY(ips.object_id, 'IsUserTable') = 1
+  AND DB_ID() > 4;
+GO
+
+-- TOP-20 фрагментированных индексов, сортировка по impact = pct × size
+SELECT 700 + ROW_NUMBER() OVER (ORDER BY ips.avg_fragmentation_in_percent * ips.page_count DESC) AS "N",
+       'runtime' AS "Section",
+       '_index_top_fragmented_' + (DB_NAME() COLLATE DATABASE_DEFAULT) + '_'
+         + CONVERT(NVARCHAR(10), ips.object_id) + '_'
+         + CONVERT(NVARCHAR(10), ips.index_id) AS "Key",
+       N'Индекс: ' + (DB_NAME() COLLATE DATABASE_DEFAULT) + '.'
+         + (OBJECT_SCHEMA_NAME(ips.object_id) COLLATE DATABASE_DEFAULT) + '.'
+         + (OBJECT_NAME(ips.object_id) COLLATE DATABASE_DEFAULT) + ' / ' + (i.name COLLATE DATABASE_DEFAULT) AS "Label",
+       N'frag=' + CONVERT(NVARCHAR(20), CAST(ips.avg_fragmentation_in_percent AS DECIMAL(5,1))) + N'% / size='
+       + CONVERT(NVARCHAR(20), ips.page_count * 8 / 1024) + N' MB' AS "Display",
+       CONVERT(NVARCHAR(MAX),
+         '{"db":"' + (DB_NAME() COLLATE DATABASE_DEFAULT) + '"'
+         + ',"table":"' + (OBJECT_SCHEMA_NAME(ips.object_id) COLLATE DATABASE_DEFAULT) + '.' + (OBJECT_NAME(ips.object_id) COLLATE DATABASE_DEFAULT) + '"'
+         + ',"index":"' + (i.name COLLATE DATABASE_DEFAULT) + '"'
+         + ',"frag_pct":'   + CONVERT(NVARCHAR(20), CAST(ips.avg_fragmentation_in_percent AS DECIMAL(5,1)))
+         + ',"page_count":' + CONVERT(NVARCHAR(20), ips.page_count)
+         + ',"size_mb":'    + CONVERT(NVARCHAR(20), ips.page_count * 8 / 1024)
+         + '}'
+       ) AS "Value"
+FROM sys.dm_db_index_physical_stats(DB_ID(), NULL, NULL, NULL, 'LIMITED') ips
+JOIN sys.indexes i ON i.object_id = ips.object_id AND i.index_id = ips.index_id
+WHERE ips.page_count > 1000
+  AND ips.index_id > 0
+  AND ips.avg_fragmentation_in_percent > 30   -- только HIGH (что требует REBUILD)
+  AND OBJECTPROPERTY(ips.object_id, 'IsUserTable') = 1
+  AND DB_ID() > 4
+ORDER BY ips.avg_fragmentation_in_percent * ips.page_count DESC
+OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY;
+GO
+
+-- ============================================================================
+-- bd nbf: КРУПНЫЕ НЕСЖАТЫЕ ТАБЛИЦЫ (>10 GB, ни один partition не сжат).
+-- На Enterprise edition сжатие даёт 2-3× по размеру → меньше IO. Для 1С это
+-- регистры накопления, итоги, движения регистраторов. Источник: gilev.ru,
+-- assets/mssql/gilev.ru/46-mssql-compress-table.md → правило mssql_no_compression_on_large_table.
+-- Per-DB summary (один row на БД): сколько user-таблиц >10 GB живут без сжатия.
+--
+-- bd 4rz (v2.8.16): переписано через sys.dm_db_partition_stats. Прежняя версия
+-- (sys.tables × sys.partitions × sys.allocation_units) висла 8+ минут на 1ТБ
+-- БД (eshn_test1, 14M логических чтений, 6 мин CPU). Allocation_units — это
+-- внутренний реестр размещения с десятками миллионов строк на крупных БД;
+-- DMV dm_db_partition_stats хранит pre-aggregated reserved_page_count на
+-- партицию → джоин с allocation_units не нужен. NOLOCK на каталог-views — для
+-- read-only диагностики (если в момент сбора кто-то делает DDL, чуть устаревшая
+-- метаданная безопаснее, чем ожидание Sch-S).
+-- ============================================================================
+
+;WITH sizes AS (
+    -- DMV pre-aggregated по партиции — sum даёт размер таблицы за один скан.
+    SELECT object_id,
+           SUM(reserved_page_count) AS pages
+    FROM sys.dm_db_partition_stats
+    GROUP BY object_id
+), compression AS (
+    -- data_compression — атрибут партиции. MAX отвечает на вопрос «сжата ли
+    -- хоть одна партиция»: если max=0, значит ВСЕ партиции в NONE → таблица
+    -- целиком несжата.
+    SELECT object_id, MAX(data_compression) AS max_compression
+    FROM sys.partitions WITH (NOLOCK)
+    GROUP BY object_id
+), large_uncompressed AS (
+    SELECT t.object_id,
+           c.max_compression,
+           s.pages * 8 / 1024 AS size_mb
+    FROM sizes s
+    JOIN compression c ON s.object_id = c.object_id
+    JOIN sys.tables t WITH (NOLOCK) ON s.object_id = t.object_id
+    WHERE t.is_ms_shipped = 0                       -- column lookup быстрее OBJECTPROPERTY()
+      AND s.pages * 8 / 1024 > 10240                -- > 10 GB
+      AND c.max_compression = 0                     -- 0 = NONE
+)
+SELECT 440 + ROW_NUMBER() OVER (ORDER BY DB_ID()) AS "N",
+       'maintenance' AS "Section",
+       '_large_uncompressed_' + (DB_NAME() COLLATE DATABASE_DEFAULT) AS "Key",
+       N'Крупные несжатые таблицы (>10 ГБ) в БД: ' + (DB_NAME() COLLATE DATABASE_DEFAULT) AS "Label",
+       -- ISNULL: SUM/MAX на пустом наборе → NULL → string concat ломается на 'NULL'.
+       CONVERT(NVARCHAR(20), COUNT(*)) + N' таблиц / макс '
+         + CONVERT(NVARCHAR(20), ISNULL(MAX(size_mb) / 1024, 0)) + N' GB' AS "Display",
+       CONVERT(NVARCHAR(MAX),
+         '{"db":"' + (DB_NAME() COLLATE DATABASE_DEFAULT) + '"'
+         + ',"count":'      + CONVERT(NVARCHAR(20), COUNT(*))
+         + ',"max_size_mb":'+ CONVERT(NVARCHAR(20), ISNULL(MAX(size_mb), 0))
+         + ',"sum_size_mb":'+ CONVERT(NVARCHAR(20), ISNULL(SUM(size_mb), 0))
+         + '}'
+       ) AS "Value"
+FROM large_uncompressed
+WHERE DB_ID() > 4;
+GO
+
+-- ============================================================================
+-- bd fuo: LEGACY_CARDINALITY_ESTIMATION per DB.
+-- ----------------------------------------------------------------------------
+-- sys.database_scoped_configurations — catalog VIEW без параметров, возвращает
+-- настройки только текущей БД (контекст определяется по USE / sqlcmd -d).
+-- НЕ TVF: вызов sys.database_scoped_configurations(<db_id>) → Msg 4121
+-- "не является функцией" (это и был баг v2.8.14).
+--
+-- View появилась в SQL 2016 RTM (ProductMajorVersion = 13). На SQL ≤ 2014
+-- ссылка на view упадёт при PARSE-time → оборачиваем в sp_executesql, чтобы
+-- парсинг отложился до момента выполнения. На старой версии IF просто не
+-- зайдёт в ветку и ничего не эмитим — PowerShell-агрегатор увидит 0 строк
+-- _legacy_ce_* → итоговый legacy_cardinality_estimator_db_count = 0 → правило
+-- mssql_legacy_cardinality_estimator_on не сработает (корректно: фичи нет).
+-- ============================================================================
+
+IF CAST(SERVERPROPERTY('ProductMajorVersion') AS INT) >= 13
+    AND DB_ID() > 4
+BEGIN
+    EXEC sp_executesql N'
+    SELECT 450 + ROW_NUMBER() OVER (ORDER BY DB_ID()) AS "N",
+           ''instance_config'' AS "Section",
+           ''_legacy_ce_'' + (DB_NAME() COLLATE DATABASE_DEFAULT) AS "Key",
+           N''LEGACY_CARDINALITY_ESTIMATION в БД: '' + (DB_NAME() COLLATE DATABASE_DEFAULT) AS "Label",
+           CASE WHEN ISNULL(MAX(CAST([value] AS INT)), 0) = 1
+                THEN N''ON (устаревший оценщик)'' ELSE N''OFF (актуальный)'' END AS "Display",
+           CONVERT(NVARCHAR(MAX),
+             ''{"db":"'' + (DB_NAME() COLLATE DATABASE_DEFAULT) + ''"''
+             + '',"count":'' + CONVERT(NVARCHAR(20), ISNULL(MAX(CAST([value] AS INT)), 0))
+             + ''}''
+           ) AS "Value"
+    FROM sys.database_scoped_configurations
+    WHERE (name COLLATE DATABASE_DEFAULT) = ''LEGACY_CARDINALITY_ESTIMATION''';
+END
+GO
