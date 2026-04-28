@@ -1,0 +1,10 @@
+{
+  "version": "2.11.21",
+  "name": "1c-diagnostic",
+  "display_name": "Диагностика PostgreSQL и MS SQL Server для 1С:Предприятие",
+  "vendor": "audit-reshenie.ru",
+  "contact": "info@audit-reshenie.ru",
+  "repo": "air900/check-parameters-sql-server-for-1c",
+  "api_url": "https://check-speed-sql-server-1c.audit-reshenie.ru:15443/api/v1",
+  "anamnesis_kit_version": "1.1.7"
+}
