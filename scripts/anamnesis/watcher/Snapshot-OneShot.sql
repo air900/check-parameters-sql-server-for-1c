@@ -1,0 +1,141 @@
+﻿-- =============================================================================
+-- Snapshot-OneShot.sql
+-- Возвращает одну строку с 7 столбцами JSON-секций (NVARCHAR(MAX)).
+-- Использует FOR JSON PATH; каждая секция всегда массив (даже пустой).
+-- SQL Server 2016+ требуется (FOR JSON).
+-- Параметр: -v db=eshn_test1
+-- =============================================================================
+SET NOCOUNT ON;
+DECLARE @db SYSNAME = N'$(db)';
+DECLARE @db_id INT = DB_ID(@db);
+
+DECLARE @requests NVARCHAR(MAX), @waits NVARCHAR(MAX), @locks NVARCHAR(MAX),
+        @memory_grants NVARCHAR(MAX), @tempdb_usage NVARCHAR(MAX),
+        @blocking NVARCHAR(MAX), @qstore_top NVARCHAR(MAX);
+
+-- 1. requests (top 30 active by cpu_time)
+SET @requests = (
+    SELECT TOP 30
+        r.session_id, r.start_time, r.status, r.command,
+        r.wait_type, r.wait_time, r.last_wait_type, r.cpu_time,
+        r.reads, r.writes, r.logical_reads,
+        DATEDIFF(SECOND, r.start_time, GETDATE()) AS elapsed_sec,
+        r.blocking_session_id, r.granted_query_memory,
+        SUBSTRING(t.text, r.statement_start_offset/2+1,
+            (CASE r.statement_end_offset WHEN -1 THEN DATALENGTH(t.text)
+                 ELSE r.statement_end_offset END - r.statement_start_offset)/2+1) AS sql_text,
+        CONVERT(NVARCHAR(MAX), qp.query_plan) AS query_plan,
+        CONVERT(VARCHAR(34), r.plan_handle, 1) AS plan_handle
+    FROM sys.dm_exec_requests r
+    OUTER APPLY sys.dm_exec_sql_text(r.sql_handle) t
+    OUTER APPLY sys.dm_exec_query_plan(r.plan_handle) qp
+    WHERE r.session_id > 50 AND r.session_id <> @@SPID
+    ORDER BY r.cpu_time DESC
+    FOR JSON PATH, INCLUDE_NULL_VALUES
+);
+
+-- 2. waits (cumulative — Layer 3 считает delta)
+SET @waits = (
+    SELECT wait_type, waiting_tasks_count, wait_time_ms,
+           max_wait_time_ms, signal_wait_time_ms
+    FROM sys.dm_os_wait_stats
+    WHERE wait_type NOT IN (
+        N'CLR_SEMAPHORE', N'LAZYWRITER_SLEEP', N'RESOURCE_QUEUE', N'SLEEP_TASK',
+        N'SLEEP_SYSTEMTASK', N'SQLTRACE_BUFFER_FLUSH', N'WAITFOR', N'LOGMGR_QUEUE',
+        N'CHECKPOINT_QUEUE', N'REQUEST_FOR_DEADLOCK_SEARCH', N'XE_TIMER_EVENT',
+        N'BROKER_TO_FLUSH', N'BROKER_TASK_STOP', N'CLR_MANUAL_EVENT',
+        N'CLR_AUTO_EVENT', N'DISPATCHER_QUEUE_SEMAPHORE', N'FT_IFTS_SCHEDULER_IDLE_WAIT',
+        N'XE_DISPATCHER_WAIT', N'XE_DISPATCHER_JOIN', N'BROKER_EVENTHANDLER',
+        N'TRACEWRITE', N'FT_IFTSHC_MUTEX', N'SQLTRACE_INCREMENTAL_FLUSH_SLEEP',
+        N'BROKER_RECEIVE_WAITFOR', N'ONDEMAND_TASK_QUEUE', N'DBMIRROR_EVENTS_QUEUE',
+        N'DBMIRRORING_CMD', N'BROKER_TRANSMITTER', N'SQLTRACE_WAIT_ENTRIES'
+    )
+    AND waiting_tasks_count > 0
+    FOR JSON PATH, INCLUDE_NULL_VALUES
+);
+
+-- 3. locks (агрегированно — count по типу/режиму, чтобы JSON был компактным)
+SET @locks = (
+    SELECT resource_type, request_mode, COUNT(*) AS cnt
+    FROM sys.dm_tran_locks
+    WHERE resource_database_id = @db_id
+    GROUP BY resource_type, request_mode
+    FOR JSON PATH
+);
+
+-- 4. memory_grants (только активные)
+SET @memory_grants = (
+    SELECT session_id, request_id, requested_memory_kb, granted_memory_kb,
+           used_memory_kb, ideal_memory_kb, queue_id, wait_time_ms,
+           is_next_candidate
+    FROM sys.dm_exec_query_memory_grants
+    FOR JSON PATH, INCLUDE_NULL_VALUES
+);
+
+-- 5. tempdb_usage (per session)
+SET @tempdb_usage = (
+    SELECT TOP 30
+        session_id,
+        SUM(internal_objects_alloc_page_count) AS internal_alloc_pages,
+        SUM(user_objects_alloc_page_count) AS user_alloc_pages,
+        SUM(internal_objects_dealloc_page_count) AS internal_dealloc_pages,
+        SUM(user_objects_dealloc_page_count) AS user_dealloc_pages
+    FROM sys.dm_db_task_space_usage
+    WHERE session_id > 50
+    GROUP BY session_id
+    HAVING SUM(internal_objects_alloc_page_count) + SUM(user_objects_alloc_page_count) > 0
+    ORDER BY SUM(internal_objects_alloc_page_count) + SUM(user_objects_alloc_page_count) DESC
+    FOR JSON PATH
+);
+
+-- 6. blocking (head + chain)
+SET @blocking = (
+    SELECT
+        ow.blocking_session_id,
+        ow.session_id AS blocked_session_id,
+        ow.wait_type,
+        ow.wait_duration_ms,
+        ow.resource_description
+    FROM sys.dm_os_waiting_tasks ow
+    WHERE ow.blocking_session_id IS NOT NULL
+      AND ow.blocking_session_id <> ow.session_id
+    FOR JSON PATH, INCLUDE_NULL_VALUES
+);
+
+-- 7. qstore_top (если QS включён на @db)
+IF EXISTS (
+    SELECT 1 FROM sys.databases
+    WHERE name = @db AND is_query_store_on = 1
+)
+BEGIN
+    DECLARE @qsql NVARCHAR(MAX) = N'
+    SELECT TOP 10
+        qsq.query_id,
+        qsp.plan_id,
+        qsrs.last_execution_time,
+        qsrs.count_executions,
+        qsrs.avg_duration / 1000.0 AS avg_duration_ms,
+        qsrs.avg_cpu_time / 1000.0 AS avg_cpu_time_ms,
+        qsrs.avg_logical_io_reads,
+        qsrs.avg_query_max_used_memory
+    FROM ' + QUOTENAME(@db) + N'.sys.query_store_query qsq
+    JOIN ' + QUOTENAME(@db) + N'.sys.query_store_plan qsp ON qsq.query_id = qsp.query_id
+    JOIN ' + QUOTENAME(@db) + N'.sys.query_store_runtime_stats qsrs ON qsp.plan_id = qsrs.plan_id
+    WHERE qsrs.last_execution_time > DATEADD(MINUTE, -10, GETUTCDATE())
+    ORDER BY qsrs.avg_duration DESC
+    FOR JSON PATH';
+
+    DECLARE @qresult TABLE (j NVARCHAR(MAX));
+    INSERT @qresult EXEC sp_executesql @qsql;
+    SELECT @qstore_top = j FROM @qresult;
+END;
+
+-- Финальная строка
+SELECT
+    ISNULL(@requests, N'[]') AS requests,
+    ISNULL(@waits, N'[]') AS waits,
+    ISNULL(@locks, N'[]') AS locks,
+    ISNULL(@memory_grants, N'[]') AS memory_grants,
+    ISNULL(@tempdb_usage, N'[]') AS tempdb_usage,
+    ISNULL(@blocking, N'[]') AS blocking,
+    ISNULL(@qstore_top, N'[]') AS qstore_top;
